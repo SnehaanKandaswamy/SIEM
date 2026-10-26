@@ -1,0 +1,185 @@
+# SIEM Dashboard for DevOps - base stack. Use with docker-compose.dev.yml (local) or docker-compose.prod.yml (images).
+# Only the web UI (and Grafana) are published, and only on the loopback interface by default.
+name: siem
+
+x-restart: &restart
+  restart: unless-stopped
+
+networks:
+  data: # PostgreSQL + OpenSearch: no route to the outside world
+    internal: true
+  edge:
+
+volumes:
+  pgdata:
+  osdata:
+  promdata:
+  grafanadata:
+  fluentstate:
+  nginxlogs:
+  backups:
+
+services:
+  postgres:
+    image: postgres:16.4-alpine
+    <<: *restart
+    environment:
+      POSTGRES_DB: siem
+      POSTGRES_USER: siem
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - backups:/backups
+    networks: [data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U siem -d siem"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    stop_grace_period: 30s
+
+  opensearch:
+    image: opensearchproject/opensearch:2.17.1
+    <<: *restart
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true" # internal-only network; docker-compose.prod.yml enables the security plugin
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      bootstrap.memory_lock: "false"
+      OPENSEARCH_JAVA_OPTS: ${OPENSEARCH_JAVA_OPTS:--Xms1g -Xmx1g}
+      path.repo: /snapshots
+    ulimits:
+      nofile: { soft: 65536, hard: 65536 }
+    volumes:
+      - osdata:/usr/share/opensearch/data
+      - backups:/snapshots
+    networks: [data]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s >/dev/null"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 30s
+    stop_grace_period: 60s
+
+  migrate:
+    image: ${SIEM_BACKEND_IMAGE:-siem-backend:local}
+    build: ./backend
+    restart: "no"
+    command: ["alembic", "upgrade", "head"]
+    environment: &backend-env
+      SIEM_ENV: ${SIEM_ENV:-development}
+      SIEM_DATABASE_URL: postgresql+psycopg://siem:${POSTGRES_PASSWORD}@postgres:5432/siem
+      SIEM_OPENSEARCH_URL: ${SIEM_OPENSEARCH_URL:-http://opensearch:9200}
+      SIEM_OPENSEARCH_USER: ${SIEM_OPENSEARCH_USER:-}
+      SIEM_OPENSEARCH_PASSWORD: ${SIEM_OPENSEARCH_PASSWORD:-}
+      SIEM_JWT_SECRET: ${SIEM_JWT_SECRET:?set SIEM_JWT_SECRET in .env}
+      SIEM_INGEST_API_KEYS: ${SIEM_INGEST_API_KEYS:?set SIEM_INGEST_API_KEYS in .env}
+      SIEM_BOOTSTRAP_ADMIN_USERNAME: ${SIEM_BOOTSTRAP_ADMIN_USERNAME:-}
+      SIEM_BOOTSTRAP_ADMIN_PASSWORD: ${SIEM_BOOTSTRAP_ADMIN_PASSWORD:-}
+      SIEM_CORS_ORIGINS: ${SIEM_CORS_ORIGINS:-http://localhost:8080}
+      SIEM_ALLOW_DEMO_ENDPOINTS: ${SIEM_ALLOW_DEMO_ENDPOINTS:-false}
+      SIEM_SMTP_HOST: ${SIEM_SMTP_HOST:-}
+      SIEM_SMTP_PORT: ${SIEM_SMTP_PORT:-25}
+      SIEM_SMTP_USER: ${SIEM_SMTP_USER:-}
+      SIEM_SMTP_PASSWORD: ${SIEM_SMTP_PASSWORD:-}
+      SIEM_SMTP_FROM: ${SIEM_SMTP_FROM:-siem@example.invalid}
+      SIEM_SMTP_STARTTLS: ${SIEM_SMTP_STARTTLS:-false}
+      SIEM_NOTIFY_EMAIL_TO: ${SIEM_NOTIFY_EMAIL_TO:-}
+      SIEM_SLACK_WEBHOOK_URL: ${SIEM_SLACK_WEBHOOK_URL:-}
+      SIEM_GEOIP_DB_PATH: ${SIEM_GEOIP_DB_PATH:-}
+      SIEM_GEOIP_STATIC_PATH: ${SIEM_GEOIP_STATIC_PATH:-}
+    networks: [data]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  backend:
+    image: ${SIEM_BACKEND_IMAGE:-siem-backend:local}
+    <<: *restart
+    environment: *backend-env
+    networks: [data, edge]
+    depends_on:
+      postgres: { condition: service_healthy }
+      opensearch: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    # 'local' driver: not collected by Fluent Bit (prevents ingest -> log -> ingest feedback loops)
+    logging: { driver: local, options: { max-size: 10m, max-file: "3" } }
+    stop_grace_period: 30s
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+  frontend:
+    image: ${SIEM_FRONTEND_IMAGE:-siem-frontend:local}
+    build: ./frontend
+    <<: *restart
+    ports:
+      - "127.0.0.1:${SIEM_HTTP_PORT:-8080}:8080"
+    volumes:
+      - nginxlogs:/var/log/nginx
+    networks: [edge]
+    depends_on:
+      backend: { condition: service_healthy }
+    logging: { driver: json-file, options: { max-size: 10m, max-file: "3" } }
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+  fluent-bit:
+    image: fluent/fluent-bit:3.1.9
+    <<: *restart
+    user: "0:0" # required to read /var/lib/docker/containers
+    environment:
+      SIEM_INGEST_KEY: ${SIEM_COLLECTOR_KEY:?set SIEM_COLLECTOR_KEY in .env}
+      SIEM_HOST_NAME: ${SIEM_HOST_NAME:-docker-host}
+    volumes:
+      - ./deploy/fluent-bit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
+      - ./deploy/fluent-bit/parsers.conf:/fluent-bit/etc/parsers.conf:ro
+      - fluentstate:/var/fluent-bit/state
+      - nginxlogs:/var/log/nginx:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    networks: [edge]
+    depends_on:
+      backend: { condition: service_healthy }
+    logging: { driver: local, options: { max-size: 10m, max-file: "3" } }
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    <<: *restart
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle
+    volumes:
+      - ./deploy/prometheus:/etc/prometheus:ro
+      - promdata:/prometheus
+    networks: [edge]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/healthy"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    <<: *restart
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafanadata:/var/lib/grafana
+    networks: [edge]
+    depends_on:
+      prometheus: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health | grep -q ok"]
+      interval: 15s
+      timeout: 3s
+      retries: 10

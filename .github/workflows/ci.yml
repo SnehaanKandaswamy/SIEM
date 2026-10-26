@@ -1,0 +1,219 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend (lint, tests, OpenSearch integration)
+    runs-on: ubuntu-24.04
+    services:
+      opensearch:
+        image: opensearchproject/opensearch:2.17.1
+        env:
+          discovery.type: single-node
+          DISABLE_SECURITY_PLUGIN: "true"
+          DISABLE_INSTALL_DEMO_CONFIG: "true"
+          OPENSEARCH_JAVA_OPTS: -Xms512m -Xmx512m
+        ports: ["9200:9200"]
+        options: >-
+          --health-cmd "curl -fs http://localhost:9200/_cluster/health"
+          --health-interval 10s --health-timeout 5s --health-retries 30
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      - name: Lint (ruff)
+        run: ruff check . && ruff format --check .
+      - name: Migrations apply, roll back and match the models
+        run: |
+          export SIEM_DATABASE_URL=sqlite+pysqlite:///./ci-mig.db
+          alembic upgrade head && alembic downgrade base && alembic upgrade head && alembic check
+      - name: Unit + integration tests
+        env:
+          SIEM_TEST_OPENSEARCH_URL: http://localhost:9200
+        run: pytest -q --cov=app --cov-report=xml --cov-report=term --junitxml=pytest-results.xml
+      - name: Dependency vulnerability scan (pip-audit)
+        run: pip install pip-audit && pip-audit -r requirements.txt --strict
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-test-results
+          path: |
+            backend/pytest-results.xml
+            backend/coverage.xml
+
+  frontend:
+    name: Frontend (lint, tests, build)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run format
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Dependency vulnerability scan
+        run: npm audit --audit-level=high
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+          retention-days: 7
+
+  windows:
+    name: Windows runner (PowerShell + backend tests)
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+      - name: PowerShell scripts parse and pass PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          $bad = 0
+          Get-ChildItem scripts -Recurse -Filter *.ps1 | ForEach-Object {
+            $errs = $null; [void][System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$null, [ref]$errs)
+            if ($errs) { $errs | ForEach-Object { Write-Error "$($_.Extent.File):$($_.Extent.StartLineNumber) $($_.Message)" }; $bad++ }
+          }
+          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+          $r = Invoke-ScriptAnalyzer -Path scripts -Recurse -Severity Error
+          $r | Format-Table -AutoSize
+          if ($bad -or $r) { exit 1 }
+      - name: Windows event forwarder dry run (reads the real Application log)
+        shell: pwsh
+        run: ./scripts/windows/Send-WindowsEvents.ps1 -LogName Application -Once -DryRun -InitialLookbackMinutes 600 -BookmarkDir $env:RUNNER_TEMP | Select-Object -First 20
+      - name: Backend tests on Windows
+        shell: pwsh
+        working-directory: backend
+        run: |
+          pip install -r requirements-dev.txt
+          pytest -q
+      - name: Windows-specific checks that do not need Docker
+        shell: pwsh
+        run: |
+          Copy-Item .env.example .env
+          ./scripts/siem.ps1 setup 2>&1 | Out-Null  # no-op: .env exists
+          ./scripts/windows/Test-WindowsHost.ps1 2>&1 | Out-Host
+        continue-on-error: true # Linux containers are unavailable on Windows runners; real Windows+Docker validation is manual (docs/DEPLOYMENT.md)
+
+  compose:
+    name: Compose config + stack smoke test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate throw-away secrets and validate Compose files
+        shell: pwsh
+        run: |
+          ./scripts/siem.ps1 setup
+          docker compose -f docker-compose.yml -f docker-compose.dev.yml config -q
+          $env:SIEM_IMAGE_NAMESPACE='o/r'; $env:SIEM_VERSION='sha-test'; $env:OPENSEARCH_ADMIN_PASSWORD='Ci-Only-Passw0rd!'
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml config -q
+      - name: Raise vm.max_map_count for OpenSearch
+        run: sudo sysctl -w vm.max_map_count=262144
+      - name: Start the stack
+        shell: pwsh
+        run: |
+          (Get-Content .env) -replace 'OPENSEARCH_JAVA_OPTS=.*','OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m' | Set-Content .env
+          ./scripts/siem.ps1 up
+      - name: End-to-end smoke test
+        shell: pwsh
+        run: ./scripts/smoke.ps1
+      - name: Persistence across restart
+        shell: pwsh
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.dev.yml restart backend postgres
+          docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --wait
+          ./scripts/smoke.ps1
+      - name: Collect logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.yml -f docker-compose.dev.yml logs --no-color --tail 300 > compose.log
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: compose-logs
+          path: compose.log
+      - name: Graceful shutdown (volumes preserved)
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.dev.yml down
+
+  images:
+    name: Build images + Trivy scan
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        component: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.component }}
+          load: true
+          tags: siem-${{ matrix.component }}:ci
+          cache-from: type=gha,scope=${{ matrix.component }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.component }}
+      - name: Trivy image scan (fails on fixable HIGH/CRITICAL)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: siem-${{ matrix.component }}:ci
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          trivyignores: .trivyignore
+          format: table
+
+  secrets:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  filesystem-scan:
+    name: Trivy filesystem + config scan
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          skip-dirs: backend/.venv,frontend/node_modules
+          trivyignores: .trivyignore

@@ -1,0 +1,25 @@
+# Development overlay: builds images locally, enables synthetic-demo endpoints and publishes helper ports on loopback only.
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+services:
+  backend:
+    environment:
+      SIEM_ENV: development
+      SIEM_ALLOW_DEMO_ENDPOINTS: "true"
+      SIEM_GEOIP_STATIC_PATH: /app/deploy/geoip-demo.json
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./deploy/geoip-demo.json:/app/deploy/geoip-demo.json:ro
+  # Containers that sit only on the internal 'data' network cannot publish ports, so the dev overlay also attaches
+  # PostgreSQL and OpenSearch to 'edge' - bound to loopback only. Never do this in production.
+  postgres:
+    networks: [data, edge]
+    ports:
+      - "127.0.0.1:5432:5432"
+  opensearch:
+    networks: [data, edge]
+    ports:
+      - "127.0.0.1:9200:9200"
+  prometheus:
+    ports:
+      - "127.0.0.1:9090:9090"

@@ -1,0 +1,36 @@
+# Production overlay: pulls versioned images from GHCR (never :latest), turns on OpenSearch security,
+# disables demo endpoints and publishes nothing except the web UI.
+#   $env:SIEM_VERSION = "sha-abc1234"      # or a release tag such as v1.2.0
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-build
+services:
+  migrate:
+    image: ghcr.io/${SIEM_IMAGE_NAMESPACE:?set SIEM_IMAGE_NAMESPACE (e.g. owner/repo)}-backend:${SIEM_VERSION:?set SIEM_VERSION}
+    pull_policy: always
+    build: !reset null
+    environment: &prod-env
+      SIEM_ENV: production
+      SIEM_ALLOW_DEMO_ENDPOINTS: "false"
+      SIEM_OPENSEARCH_URL: https://opensearch:9200
+      SIEM_OPENSEARCH_USER: admin
+      SIEM_OPENSEARCH_PASSWORD: ${OPENSEARCH_ADMIN_PASSWORD:?set OPENSEARCH_ADMIN_PASSWORD}
+  backend:
+    image: ghcr.io/${SIEM_IMAGE_NAMESPACE}-backend:${SIEM_VERSION}
+    pull_policy: always
+    build: !reset null
+    environment: *prod-env
+  frontend:
+    image: ghcr.io/${SIEM_IMAGE_NAMESPACE}-frontend:${SIEM_VERSION}
+    pull_policy: always
+    build: !reset null
+  opensearch:
+    environment:
+      DISABLE_SECURITY_PLUGIN: "false"
+      DISABLE_INSTALL_DEMO_CONFIG: "false" # self-signed demo TLS certs; replace with your CA for real deployments
+      OPENSEARCH_INITIAL_ADMIN_PASSWORD: ${OPENSEARCH_ADMIN_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsk -u admin:$${OPENSEARCH_INITIAL_ADMIN_PASSWORD} https://localhost:9200/_cluster/health >/dev/null"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 60s

@@ -1,0 +1,2 @@
+# Accepted-risk register for Trivy. Every entry needs a justification and an expiry review date.
+# Format: CVE-ID  # reason (review by YYYY-MM-DD)

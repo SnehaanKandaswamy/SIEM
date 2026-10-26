@@ -1,0 +1,9 @@
+title = "SIEM gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Placeholders only"
+paths = ['''\.env\.example$''']
+regexes = ['''admin:\$\$\{OPENSEARCH_INITIAL_ADMIN_PASSWORD\}''']  # env-var reference in a Compose healthcheck, not a literal

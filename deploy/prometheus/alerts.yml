@@ -1,0 +1,48 @@
+# Operational alert rules (evaluated by Prometheus; route them with Alertmanager if you deploy one).
+groups:
+  - name: siem-operations
+    rules:
+      - alert: SiemBackendDown
+        expr: up{job="siem-backend"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations: { summary: "SIEM backend is not being scraped" }
+
+      - alert: SiemDependencyDown
+        expr: siem_database_up == 0 or siem_opensearch_up == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations: { summary: "PostgreSQL or OpenSearch is unreachable from the backend" }
+
+      - alert: SiemHighErrorRate
+        expr: sum(rate(siem_http_requests_total{status=~"5.."}[5m])) / clamp_min(sum(rate(siem_http_requests_total[5m])), 1) > 0.05
+        for: 10m
+        labels: { severity: warning }
+        annotations: { summary: "More than 5% of API requests fail with 5xx" }
+
+      - alert: SiemParseFailureSpike
+        expr: sum(rate(siem_parse_failures_total[10m])) > 1
+        for: 10m
+        labels: { severity: warning }
+        annotations: { summary: "Sustained log parsing failures - check collector formats" }
+
+      - alert: SiemDetectionFailures
+        expr: increase(siem_detection_failures_total[15m]) > 0
+        labels: { severity: warning }
+        annotations: { summary: "A detection rule raised an exception" }
+
+      - alert: SiemBackgroundFailures
+        expr: increase(siem_background_failures_total[15m]) > 0
+        labels: { severity: warning }
+        annotations: { summary: "Indexing, detection or notification tasks are failing" }
+
+      - alert: SiemCollectorSilent
+        expr: siem_collector_last_seen_age_seconds > 900
+        for: 5m
+        labels: { severity: warning }
+        annotations: { summary: "No collector has delivered events for 15 minutes" }
+
+      - alert: FluentBitDroppedRecords
+        expr: increase(fluentbit_output_dropped_records_total[10m]) > 0
+        labels: { severity: warning }
+        annotations: { summary: "Fluent Bit is dropping records (backend rejecting or unreachable)" }
