@@ -1,0 +1,23 @@
+# Presentation-only backend: SQLite in /tmp and the in-memory event store (no PostgreSQL/OpenSearch).
+# Data is lost on every restart; use the Admin > System > "Load synthetic scenarios" button to refill it.
+services:
+  - type: web
+    name: siem-backend
+    runtime: docker
+    plan: free
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /healthz
+    envVars:
+      - key: SIEM_ENV
+        value: development
+      - key: SIEM_DATABASE_URL
+        value: sqlite+pysqlite:////tmp/siem.db
+      - key: SIEM_JWT_SECRET
+        generateValue: true
+      - key: SIEM_BOOTSTRAP_ADMIN_USERNAME
+        value: admin
+      - key: SIEM_BOOTSTRAP_ADMIN_PASSWORD
+        sync: false # set in the Render dashboard (min 12 characters)
+      - key: SIEM_ALLOW_DEMO_ENDPOINTS
+        value: "true"
