@@ -21,3 +21,5 @@ services:
         sync: false # set in the Render dashboard (min 12 characters)
       - key: SIEM_ALLOW_DEMO_ENDPOINTS
         value: "true"
+      - key: SIEM_GEOIP_STATIC_PATH # synthetic locations for the demo IP ranges (attack map)
+        value: /app/app/geoip_demo.json

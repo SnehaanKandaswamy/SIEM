@@ -1,15 +1,11 @@
 import { api } from '../api/client'
 import { useAsync } from '../hooks'
 import { PageHeader, State } from '../components/ui'
-
-const W = 720
-const H = 360
-const x = (lon: number) => ((lon + 180) / 360) * W
-const y = (lat: number) => ((90 - lat) / 180) * H
+import { LAND_PATH, MAP_H as H, MAP_W as W, projX as x, projY as y } from '../worldMap'
 
 /**
- * Plots only IPs that a configured GeoIP source located. No basemap tiles are fetched (no third-party
- * requests); a lat/lon grid is drawn instead. Private/reserved/unknown addresses are counted, never placed.
+ * Plots only IPs that a configured GeoIP source located. The basemap is bundled Natural Earth land data, so no
+ * tiles are fetched (no third-party requests). Private/reserved/unknown addresses are counted, never placed.
  */
 export function Geo() {
   const { data, error, loading, reload } = useAsync(() => api.geo(), [], 30000)
@@ -30,7 +26,8 @@ export function Geo() {
                 aria-label="Map of suspicious source locations"
                 className="w-full rounded bg-bg"
               >
-                {[-60, -30, 0, 30, 60].map((lat) => (
+                <path d={LAND_PATH} fill="#1c2638" stroke="#33415c" strokeWidth={0.4} />
+                {[-30, 0, 30, 60].map((lat) => (
                   <line
                     key={lat}
                     x1={0}
@@ -54,11 +51,21 @@ export function Geo() {
                 ))}
                 {data.points.map((p) => (
                   <g key={p.ip}>
+                    <circle cx={x(p.lon)} cy={y(p.lat)} r={4} fill="none" stroke="#ef4444" strokeWidth={1.5}>
+                      <animate attributeName="r" from="4" to="22" dur="2.4s" repeatCount="indefinite" />
+                      <animate
+                        attributeName="opacity"
+                        from="0.9"
+                        to="0"
+                        dur="2.4s"
+                        repeatCount="indefinite"
+                      />
+                    </circle>
                     <circle
                       cx={x(p.lon)}
                       cy={y(p.lat)}
-                      r={Math.min(6 + Math.log2(p.count + 1) * 2, 18)}
-                      fill="#ef444455"
+                      r={Math.min(4 + Math.log2(p.count + 1) * 1.5, 12)}
+                      fill="#ef444488"
                       stroke="#ef4444"
                     />
                     <title>{`${p.ip} — ${p.city || 'unknown city'}, ${p.country || 'unknown country'}: ${p.count} events (${p.rules.join(', ')})`}</title>
@@ -67,9 +74,9 @@ export function Geo() {
               </svg>
               {data.points.length === 0 && (
                 <p className="mt-2 text-sm text-slate-400">
-                  No located suspicious sources. Public IPs are placed only when a GeoIP database is
-                  configured (SIEM_GEOIP_DB_PATH); private, reserved and unknown addresses are never given
-                  coordinates.
+                  No located suspicious sources. Public IPs are placed only when a GeoIP source is configured
+                  (SIEM_GEOIP_DB_PATH, or SIEM_GEOIP_STATIC_PATH for the demo data); private, reserved and
+                  unknown addresses are never given coordinates.
                 </p>
               )}
             </div>

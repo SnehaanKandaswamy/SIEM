@@ -1,13 +1,15 @@
 import json
 import os
 from datetime import UTC, datetime
+from pathlib import Path
 
 from conftest import INGEST
 
+import app
 from app import db as dbmod
 from app.config import get_settings
-from app.demo import scenarios
-from app.ingest.geo import GeoResolver
+from app.demo import DISTRIBUTED_ATTACKERS, scenarios
+from app.ingest.geo import GeoResolver, get_resolver
 from app.main import bootstrap
 from app.models import User
 
@@ -206,6 +208,21 @@ def test_geo_static_mapping(tmp_path):
     p.write_text(json.dumps({"198.51.100.0/24": {"lat": 1.5, "lon": 2.5, "country": "ZZ", "city": "Demo"}}))
     g = GeoResolver(static_path=str(p)).lookup("198.51.100.23")
     assert g["located"] and g["location"] == {"lat": 1.5, "lon": 2.5} and g["source"] == "static"
+
+
+def test_geo_bundled_demo_map_places_attackers(client, viewer_h, monkeypatch):
+    monkeypatch.setenv("SIEM_GEOIP_STATIC_PATH", str(Path(app.__file__).parent / "geoip_demo.json"))
+    get_settings.cache_clear()
+    get_resolver.cache_clear()
+    try:
+        seed(client)
+        g = client.get("/api/dashboard/geo", headers=viewer_h).json()
+        assert {p["ip"] for p in g["points"]} >= {*DISTRIBUTED_ATTACKERS, "198.51.100.23", "198.51.100.77"}
+        assert all(p["rules"] for p in g["points"])
+    finally:
+        monkeypatch.delenv("SIEM_GEOIP_STATIC_PATH")
+        get_settings.cache_clear()
+        get_resolver.cache_clear()
 
 
 # ------------------------------------------------------------------ incidents

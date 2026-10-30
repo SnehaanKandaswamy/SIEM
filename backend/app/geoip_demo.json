@@ -1,0 +1,13 @@
+{
+  "198.51.100.23/32": { "lat": 52.37, "lon": 4.9, "country": "NL", "city": "Amsterdam (synthetic)" },
+  "198.51.100.77/32": { "lat": 50.11, "lon": 8.68, "country": "DE", "city": "Frankfurt (synthetic)" },
+  "198.51.100.140/32": { "lat": 6.52, "lon": 3.38, "country": "NG", "city": "Lagos (synthetic)" },
+  "192.0.2.14/32": { "lat": -23.55, "lon": -46.63, "country": "BR", "city": "Sao Paulo (synthetic)" },
+  "192.0.2.88/32": { "lat": 39.04, "lon": -77.49, "country": "US", "city": "Ashburn (synthetic)" },
+  "203.0.113.21/32": { "lat": 1.35, "lon": 103.82, "country": "SG", "city": "Singapore (synthetic)" },
+  "203.0.113.45/32": { "lat": 19.08, "lon": 72.88, "country": "IN", "city": "Mumbai (synthetic)" },
+  "203.0.113.99/32": { "lat": 35.68, "lon": 139.69, "country": "JP", "city": "Tokyo (synthetic)" },
+  "198.51.100.0/24": { "lat": 52.0, "lon": 5.0, "country": "DEMO", "city": "Synthetic demo location A" },
+  "203.0.113.0/24": { "lat": -33.9, "lon": 151.2, "country": "DEMO", "city": "Synthetic demo location B" },
+  "192.0.2.0/24": { "lat": 40.71, "lon": -74.0, "country": "DEMO", "city": "Synthetic demo location C" }
+}

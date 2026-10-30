@@ -5,11 +5,9 @@ services:
     environment:
       SIEM_ENV: development
       SIEM_ALLOW_DEMO_ENDPOINTS: "true"
-      SIEM_GEOIP_STATIC_PATH: /app/deploy/geoip-demo.json
+      SIEM_GEOIP_STATIC_PATH: /app/app/geoip_demo.json # bundled in the backend image
     ports:
       - "127.0.0.1:8000:8000"
-    volumes:
-      - ./deploy/geoip-demo.json:/app/deploy/geoip-demo.json:ro
   # Containers that sit only on the internal 'data' network cannot publish ports, so the dev overlay also attaches
   # PostgreSQL and OpenSearch to 'edge' - bound to loopback only. Never do this in production.
   postgres:

@@ -8,7 +8,7 @@ from conftest import INGEST
 
 from app import db as dbmod
 from app.config import get_settings
-from app.demo import scenarios
+from app.demo import DISTRIBUTED_ATTACKERS, scenarios
 from app.deps import state
 from app.security import limiter
 from app.store import OpenSearchStore, SearchParams
@@ -53,7 +53,9 @@ def test_event_to_alert_to_search_end_to_end(os_client):
     h = login(c)
     recs = [r for v in scenarios().values() for r in v]
     res = c.post("/api/ingest", json={"records": recs}, headers=INGEST).json()
-    assert res["rejected"] == 0 and res["alerts_created"] == 5 and res["indexed"] == len(recs)
+    assert (
+        res["rejected"] == 0 and res["alerts_created"] == 5 + len(DISTRIBUTED_ATTACKERS) and res["indexed"] == len(recs)
+    )
     # duplicates are rejected by the _id (create op)
     assert c.post("/api/ingest", json={"records": recs}, headers=INGEST).json()["duplicates"] == len(recs)
     store.client.indices.refresh(index=store.pattern)

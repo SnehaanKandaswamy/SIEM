@@ -85,8 +85,9 @@ The repository ships **no** GeoIP database. To place public IPs on the map, down
 (free licence key and EULA acceptance required; it must be refreshed regularly and may not be redistributed), mount it
 into the backend container and set `SIEM_GEOIP_DB_PATH`. Without it, public IPs are stored as
 `{"scope":"public","located":false}`. Private, loopback, link-local, reserved and documentation ranges are never
-located. `deploy/geoip-demo.json` maps two RFC 5737 documentation ranges to clearly labelled *synthetic* coordinates, for
-demos only, via `SIEM_GEOIP_STATIC_PATH` (enabled by the dev overlay, never in production).
+located. `backend/app/geoip_demo.json` maps the RFC 5737 documentation addresses used by the demo generator to clearly
+labelled *synthetic* coordinates, for demos only, via `SIEM_GEOIP_STATIC_PATH` (enabled by the dev overlay and the Render
+demo blueprint, never in production).
 IP addresses can be personal data (GDPR/UK GDPR): geolocation is city-level approximate, events are retained 30 days by the
 ISM policy, and the map does not call any external service (no tiles).
 

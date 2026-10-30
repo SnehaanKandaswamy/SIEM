@@ -12,6 +12,8 @@ import sys
 from datetime import UTC, datetime, timedelta
 
 EICAR_SHA256 = "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
+# Located by app/geoip_demo.json when SIEM_GEOIP_STATIC_PATH points at it.
+DISTRIBUTED_ATTACKERS = ("192.0.2.14", "192.0.2.88", "203.0.113.21", "203.0.113.45", "203.0.113.99", "198.51.100.140")
 
 
 def _iso(t: datetime) -> str:
@@ -81,6 +83,13 @@ def scenarios(now: datetime | None = None) -> dict[str, list[dict]]:
     ]
     out["port_scan"] = [
         _fw(t0 + timedelta(seconds=i * 0.5), "fw-01", "198.51.100.77", "10.0.0.5", 20 + i) for i in range(24)
+    ]
+    # R1 positive per source: public attackers spread over several edge hosts so the attack map has points to
+    # plot. Users rotate so no (host, user) pair reaches R2's threshold.
+    out["distributed_bruteforce"] = [
+        _ssh(t0 + timedelta(seconds=4 * i), f"edge-{n:02d}", False, ("root", "admin", "ubuntu")[i % 3], ip, 400 + i)
+        for n, ip in enumerate(DISTRIBUTED_ATTACKERS, start=1)
+        for i in range(6)
     ]
     out["suspicious_command"] = [
         _win(
