@@ -90,11 +90,11 @@ export function Overview() {
                 ) : (
                   <ResponsiveContainer width="100%" height={220}>
                     <LineChart data={timeline}>
-                      <CartesianGrid stroke="#263147" strokeDasharray="3 3" />
-                      <XAxis dataKey="time" stroke="#94a3b8" fontSize={11} />
-                      <YAxis stroke="#94a3b8" fontSize={11} allowDecimals={false} />
-                      <Tooltip contentStyle={{ background: '#111827', border: '1px solid #263147' }} />
-                      <Line type="monotone" dataKey="count" stroke="#38bdf8" dot={false} strokeWidth={2} />
+                      <CartesianGrid stroke="#2a2c2f" strokeDasharray="3 3" />
+                      <XAxis dataKey="time" stroke="#9a9a97" fontSize={11} />
+                      <YAxis stroke="#9a9a97" fontSize={11} allowDecimals={false} />
+                      <Tooltip contentStyle={{ background: '#0d0d0e', border: '1px solid #2a2c2f' }} />
+                      <Line type="monotone" dataKey="count" stroke="#d4f8b8" dot={false} strokeWidth={2} />
                     </LineChart>
                   </ResponsiveContainer>
                 )}
@@ -106,12 +106,12 @@ export function Overview() {
                 ) : (
                   <ResponsiveContainer width="100%" height={220}>
                     <BarChart data={byRule} layout="vertical" margin={{ left: 20 }}>
-                      <XAxis type="number" stroke="#94a3b8" fontSize={11} allowDecimals={false} />
-                      <YAxis dataKey="rule" type="category" stroke="#94a3b8" fontSize={11} width={70} />
-                      <Tooltip contentStyle={{ background: '#111827', border: '1px solid #263147' }} />
+                      <XAxis type="number" stroke="#9a9a97" fontSize={11} allowDecimals={false} />
+                      <YAxis dataKey="rule" type="category" stroke="#9a9a97" fontSize={11} width={70} />
+                      <Tooltip contentStyle={{ background: '#0d0d0e', border: '1px solid #2a2c2f' }} />
                       <Bar dataKey="count">
                         {byRule.map((r) => (
-                          <Cell key={r.rule} fill="#38bdf8" />
+                          <Cell key={r.rule} fill="#d4f8b8" />
                         ))}
                       </Bar>
                     </BarChart>

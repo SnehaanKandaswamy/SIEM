@@ -5,8 +5,8 @@ export const SEV_COLOR: Record<Severity, string> = {
   critical: '#ef4444',
   high: '#f97316',
   medium: '#eab308',
-  low: '#38bdf8',
-  informational: '#94a3b8',
+  low: '#d4f8b8',
+  informational: '#9a9a97',
 }
 
 export function SevBadge({ sev }: { sev: Severity }) {

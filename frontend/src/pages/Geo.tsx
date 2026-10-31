@@ -26,7 +26,7 @@ export function Geo() {
                 aria-label="Map of suspicious source locations"
                 className="w-full rounded bg-bg"
               >
-                <path d={LAND_PATH} fill="#1c2638" stroke="#33415c" strokeWidth={0.4} />
+                <path d={LAND_PATH} fill="#17181a" stroke="#3a3d40" strokeWidth={0.4} />
                 {[-30, 0, 30, 60].map((lat) => (
                   <line
                     key={lat}
@@ -34,7 +34,7 @@ export function Geo() {
                     x2={W}
                     y1={y(lat)}
                     y2={y(lat)}
-                    stroke="#263147"
+                    stroke="#2a2c2f"
                     strokeWidth={lat === 0 ? 1 : 0.5}
                   />
                 ))}
@@ -45,7 +45,7 @@ export function Geo() {
                     y2={H}
                     x1={x(lon)}
                     x2={x(lon)}
-                    stroke="#263147"
+                    stroke="#2a2c2f"
                     strokeWidth={lon === 0 ? 1 : 0.5}
                   />
                 ))}

@@ -30,7 +30,7 @@ export function Layout() {
               to={n.to}
               end={n.to === '/'}
               className={({ isActive }) =>
-                `whitespace-nowrap rounded-md px-3 py-2 text-sm ${isActive ? 'bg-sky-700 text-white' : 'text-slate-300 hover:bg-panel2'}`
+                `whitespace-nowrap rounded-md px-3 py-2 text-sm ${isActive ? 'bg-accent font-semibold text-black' : 'text-slate-300 hover:bg-panel2'}`
               }
             >
               {n.label}
